@@ -1,0 +1,16 @@
+{
+  "name": "zap-backend",
+  "version": "1.0.0",
+  "description": "Backend for Zap UPI Add Cash & Webhook",
+  "main": "index.js",
+  "scripts": {
+    "start": "vercel dev"
+  },
+  "dependencies": {
+    "firebase-admin": "^11.0.0",
+    "node-fetch": "^2.6.7"
+  },
+  "engines": {
+    "node": "16.x"
+  }
+}

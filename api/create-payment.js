@@ -19,8 +19,8 @@ try {
 const db = admin.database();
 
 // ZAP UPI KEYS (Directly Added)
-const ZAP_TOKEN = '0292e3c8b5ae1a4afc40182c51954533';
-const ZAP_SECRET = 'c5b9f4d315e6acce8a5d6493ff2edb40';
+const ZAP_TOKEN = 'add869238024e2008b309519c0d8d263';
+const ZAP_SECRET = 'd9f7546f11140e3b652e459e2ee1a366';
 
 export default async function handler(req, res) {
     // CORS Headers (Browser error rokne ke liye)

@@ -1,6 +1,6 @@
 const admin = require('firebase-admin');
 
-// Initialize Firebase Admin (Singleton to prevent multiple init errors in serverless)
+// Firebase Initialization
 if (!admin.apps.length) {
     admin.initializeApp({
         credential: admin.credential.cert({
@@ -14,23 +14,34 @@ if (!admin.apps.length) {
 const db = admin.database();
 
 export default async function handler(req, res) {
-    if (req.method !== 'POST') {
-        return res.status(405).json({ message: 'Method Not Allowed' });
+    // CORS Headers allow karna zaruri hai frontend request ke liye
+    res.setHeader('Access-Control-Allow-Credentials', true);
+    res.setHeader('Access-Control-Allow-Origin', '*'); // Allow all domains
+    res.setHeader('Access-Control-Allow-Methods', 'OPTIONS,POST');
+    res.setHeader(
+        'Access-Control-Allow-Headers',
+        'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
+    );
+
+    // Browser pehle OPTIONS request bhejta hai check karne ke liye (Preflight)
+    if (req.method === 'OPTIONS') {
+        return res.status(200).end();
     }
+
+    if (req.method !== 'POST') return res.status(405).json({ message: 'Only POST allowed' });
 
     const { uid, amount } = req.body;
 
-    // 1. Validate amount > 0 and uid exists
     if (!uid || !amount || Number(amount) <= 0) {
-        return res.status(400).json({ message: 'Valid UID and Amount (>0) are required' });
+        return res.status(400).json({ message: 'Valid UID and Amount required' });
     }
 
     try {
-        // 2. Generate unique transactionId
-        const transactionId = `TXN_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+        // Generate Unique Order ID
+        const orderId = `TXN_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
 
-        // 3. Save transaction with status "pending"
-        await db.ref(`transactions/${transactionId}`).set({
+        // Save pending transaction to Firebase
+        await db.ref(`transactions/${orderId}`).set({
             uid: uid,
             amount: Number(amount),
             type: 'deposit',
@@ -38,45 +49,40 @@ export default async function handler(req, res) {
             createdAt: admin.database.ServerValue.TIMESTAMP
         });
 
-        // Generate webhook URL
-        const protocol = req.headers['x-forwarded-proto'] || 'https';
-        const webhookUrl = `${protocol}://${req.headers.host}/api/zap-webhook`;
+        // Aapka Vercel Webhook URL
+        const webhookUrl = 'https://nackend.vercel.app/api/zap-webhook';
 
-        // 4. Call Zap UPI create API
+        // Zap Create Order API Call
         const payload = new URLSearchParams();
         payload.append('token_key', process.env.ZAP_API_TOKEN);
         payload.append('secret_key', process.env.ZAP_SECRET_KEY);
         payload.append('amount', amount);
-        payload.append('order_id', transactionId);
-        payload.append('customer_mobile', '9999999999'); // Fallback/default mobile
-        payload.append('redirect_url', webhookUrl);      // As requested
+        payload.append('order_id', orderId);
+        payload.append('customer_mobile', '9999999999'); 
+        payload.append('redirect_url', webhookUrl); 
         payload.append('remark', 'Wallet Deposit');
 
         const response = await fetch("https://zapupi.com/api/create-order", {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'Authorization': `Bearer ${process.env.ZAP_API_TOKEN}`
-            },
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: payload
         });
 
         const data = await response.json();
 
+        // Check response from Zap
         if (response.ok && data.status === 'success') {
-            // 6. Return paymentUrl to frontend 
-            // (Uses typical payment_url param, returning whole data object as fallback)
+            // Frontend ko payment URL return karein
             return res.status(200).json({ 
-                paymentUrl: data.payment_url || data.url,
-                transactionId: transactionId,
-                originalData: data
+                paymentUrl: data.payment_url || data.url, 
+                orderId: orderId 
             });
         } else {
-            console.error('Zap UPI Error:', data);
-            return res.status(500).json({ message: 'Failed to create payment via Gateway', error: data });
+            console.error('Zap API Error:', data);
+            return res.status(500).json({ message: 'Payment gateway error', error: data });
         }
     } catch (error) {
-        console.error('Create Payment Error:', error);
+        console.error('Server Error:', error);
         return res.status(500).json({ message: 'Internal Server Error' });
     }
-          }
+        }
